@@ -133,54 +133,51 @@ func schemaRefValidator() {
 func TestSchemaValidator_EdgeCases(t *testing.T) {
 	var s *SchemaValidator
 
-	res := s.Validate("123")
+	res := s.Validate("", "123")
 	assert.NotNil(t, res)
 	assert.True(t, res.IsValid())
 
-	s = NewSchemaValidator(nil, nil, "", strfmt.Default)
+	s = NewSchemaValidator(nil, nil, strfmt.Default)
 	assert.Nil(t, s)
 
 	v := "ABC"
-	b := s.Applies(v, reflect.String)
+	b := s.Applies("", v, reflect.String)
 	assert.False(t, b)
 
 	sp := spec.Schema{}
-	b = s.Applies(&sp, reflect.Struct)
+	b = s.Applies("", &sp, reflect.Struct)
 	assert.True(t, b)
 
 	spp := spec.Float64Property()
 
-	s = NewSchemaValidator(spp, nil, "", strfmt.Default)
+	s = NewSchemaValidator(spp, nil, strfmt.Default)
 
-	s.SetPath("path")
-	assert.Equal(t, "path", s.Path)
-
-	r := s.Validate(nil)
+	r := s.Validate("", nil)
 	assert.NotNil(t, r)
 	assert.False(t, r.IsValid())
 
 	// Validating json.Number data against number|float64
 	j := json.Number("123")
-	r = s.Validate(j)
+	r = s.Validate("", j)
 	assert.True(t, r.IsValid())
 
 	// Validating json.Number data against integer|int32
 	spp = spec.Int32Property()
-	s = NewSchemaValidator(spp, nil, "", strfmt.Default)
+	s = NewSchemaValidator(spp, nil, strfmt.Default)
 	j = json.Number("123")
-	r = s.Validate(j)
+	r = s.Validate("", j)
 	assert.True(t, r.IsValid())
 
 	bignum := swag.FormatFloat64(math.MaxFloat64)
 	j = json.Number(bignum)
-	r = s.Validate(j)
+	r = s.Validate("", j)
 	assert.False(t, r.IsValid())
 
 	// Validating incorrect json.Number data
 	spp = spec.Float64Property()
-	s = NewSchemaValidator(spp, nil, "", strfmt.Default)
+	s = NewSchemaValidator(spp, nil, strfmt.Default)
 	j = json.Number("AXF")
-	r = s.Validate(j)
+	r = s.Validate("", j)
 	assert.False(t, r.IsValid())
 }
 
@@ -499,8 +496,8 @@ func TestCelExpressionValidator(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			validator := NewSchemaValidator(schema, nil, "", strfmt.Default, ValidationRulesEnabled)
-			r := validator.Validate(tc.input)
+			validator := NewSchemaValidator(schema, nil, strfmt.Default, ValidationRulesEnabled)
+			r := validator.Validate("", tc.input)
 
 			actualErrors := map[string]struct{}{}
 			for _, e := range r.Errors {

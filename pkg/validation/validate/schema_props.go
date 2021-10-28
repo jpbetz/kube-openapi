@@ -23,7 +23,6 @@ import (
 )
 
 type schemaPropsValidator struct {
-	Path            string
 	In              string
 	AllOf           []spec.Schema
 	OneOf           []spec.Schema
@@ -39,30 +38,26 @@ type schemaPropsValidator struct {
 	Options         SchemaValidatorOptions
 }
 
-func (s *schemaPropsValidator) SetPath(path string) {
-	s.Path = path
-}
-
-func newSchemaPropsValidator(path string, in string, allOf, oneOf, anyOf []spec.Schema, not *spec.Schema, deps spec.Dependencies, root interface{}, formats strfmt.Registry, options ...Option) *schemaPropsValidator {
+func newSchemaPropsValidator(in string, allOf, oneOf, anyOf []spec.Schema, not *spec.Schema, deps spec.Dependencies, root interface{}, formats strfmt.Registry, options ...Option) *schemaPropsValidator {
 	var anyValidators []SchemaValidator
 	for _, v := range anyOf {
 		v := v
-		anyValidators = append(anyValidators, *NewSchemaValidator(&v, root, path, formats, options...))
+		anyValidators = append(anyValidators, *NewSchemaValidator(&v, root, formats, options...))
 	}
 	var allValidators []SchemaValidator
 	for _, v := range allOf {
 		v := v
-		allValidators = append(allValidators, *NewSchemaValidator(&v, root, path, formats, options...))
+		allValidators = append(allValidators, *NewSchemaValidator(&v, root, formats, options...))
 	}
 	var oneValidators []SchemaValidator
 	for _, v := range oneOf {
 		v := v
-		oneValidators = append(oneValidators, *NewSchemaValidator(&v, root, path, formats, options...))
+		oneValidators = append(oneValidators, *NewSchemaValidator(&v, root, formats, options...))
 	}
 
 	var notValidator *SchemaValidator
 	if not != nil {
-		notValidator = NewSchemaValidator(not, root, path, formats, options...)
+		notValidator = NewSchemaValidator(not, root, formats, options...)
 	}
 
 	schOptions := &SchemaValidatorOptions{}
@@ -70,7 +65,6 @@ func newSchemaPropsValidator(path string, in string, allOf, oneOf, anyOf []spec.
 		o(schOptions)
 	}
 	return &schemaPropsValidator{
-		Path:            path,
 		In:              in,
 		AllOf:           allOf,
 		OneOf:           oneOf,
@@ -87,13 +81,13 @@ func newSchemaPropsValidator(path string, in string, allOf, oneOf, anyOf []spec.
 	}
 }
 
-func (s *schemaPropsValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (s *schemaPropsValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	r := reflect.TypeOf(source) == specSchemaType
-	debugLog("schema props validator for %q applies %t for %T (kind: %v)\n", s.Path, r, source, kind)
+	debugLog("schema props validator for %q applies %t for %T (kind: %v)\n", path, r, source, kind)
 	return r
 }
 
-func (s *schemaPropsValidator) Validate(data interface{}) *Result {
+func (s *schemaPropsValidator) Validate(path string, data interface{}) *Result {
 	mainResult := new(Result)
 
 	// Intermediary error results
@@ -109,7 +103,7 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 		var bestFailures *Result
 		succeededOnce := false
 		for _, anyOfSchema := range s.anyOfValidators {
-			result := anyOfSchema.Validate(data)
+			result := anyOfSchema.Validate(path, data)
 			// We keep inner IMPORTANT! errors no matter what MatchCount tells us
 			keepResultAnyOf.Merge(result.keepRelevantErrors())
 			if result.IsValid() {
@@ -128,7 +122,7 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 		}
 
 		if !succeededOnce {
-			mainResult.AddErrors(mustValidateAtLeastOneSchemaMsg(s.Path))
+			mainResult.AddErrors(mustValidateAtLeastOneSchemaMsg(path))
 		}
 		if bestFailures != nil {
 			mainResult.Merge(bestFailures)
@@ -144,7 +138,7 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 		validated := 0
 
 		for _, oneOfSchema := range s.oneOfValidators {
-			result := oneOfSchema.Validate(data)
+			result := oneOfSchema.Validate(path, data)
 			// We keep inner IMPORTANT! errors no matter what MatchCount tells us
 			keepResultOneOf.Merge(result.keepRelevantErrors())
 			if result.IsValid() {
@@ -170,7 +164,7 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 				additionalMsg = fmt.Sprintf("Found %d valid alternatives", validated)
 			}
 
-			mainResult.AddErrors(mustValidateOnlyOneSchemaMsg(s.Path, additionalMsg))
+			mainResult.AddErrors(mustValidateOnlyOneSchemaMsg(path, additionalMsg))
 			if bestFailures != nil {
 				mainResult.Merge(bestFailures)
 			}
@@ -184,7 +178,7 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 		validated := 0
 
 		for _, allOfSchema := range s.allOfValidators {
-			result := allOfSchema.Validate(data)
+			result := allOfSchema.Validate(path, data)
 			// We keep inner IMPORTANT! errors no matter what MatchCount tells us
 			keepResultAllOf.Merge(result.keepRelevantErrors())
 			//keepResultAllOf.Merge(result)
@@ -200,15 +194,15 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 				additionalMsg = ". None validated"
 			}
 
-			mainResult.AddErrors(mustValidateAllSchemasMsg(s.Path, additionalMsg))
+			mainResult.AddErrors(mustValidateAllSchemasMsg(path, additionalMsg))
 		}
 	}
 
 	if s.notValidator != nil {
-		result := s.notValidator.Validate(data)
+		result := s.notValidator.Validate(path, data)
 		// We keep inner IMPORTANT! errors no matter what MatchCount tells us
 		if result.IsValid() {
-			mainResult.AddErrors(mustNotValidatechemaMsg(s.Path))
+			mainResult.AddErrors(mustNotValidatechemaMsg(path))
 		}
 	}
 
@@ -218,14 +212,14 @@ func (s *schemaPropsValidator) Validate(data interface{}) *Result {
 			if dep, ok := s.Dependencies[key]; ok {
 
 				if dep.Schema != nil {
-					mainResult.Merge(NewSchemaValidator(dep.Schema, s.Root, s.Path+"."+key, s.KnownFormats, s.Options.Options()...).Validate(data))
+					mainResult.Merge(NewSchemaValidator(dep.Schema, s.Root, s.KnownFormats, s.Options.Options()...).Validate(path+"."+key, data))
 					continue
 				}
 
 				if len(dep.Property) > 0 {
 					for _, depKey := range dep.Property {
 						if _, ok := val[depKey]; !ok {
-							mainResult.AddErrors(hasADependencyMsg(s.Path, depKey))
+							mainResult.AddErrors(hasADependencyMsg(path, depKey))
 						}
 					}
 				}

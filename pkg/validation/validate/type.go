@@ -29,7 +29,6 @@ type typeValidator struct {
 	Nullable bool
 	Format   string
 	In       string
-	Path     string
 }
 
 func (t *typeValidator) schemaInfoForType(data interface{}) (string, string) {
@@ -117,25 +116,21 @@ func (t *typeValidator) schemaInfoForType(data interface{}) (string, string) {
 	return "", ""
 }
 
-func (t *typeValidator) SetPath(path string) {
-	t.Path = path
-}
-
-func (t *typeValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (t *typeValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	// typeValidator applies to Schema, Parameter and Header objects
 	stpe := reflect.TypeOf(source)
 	r := (len(t.Type) > 0 || t.Format != "") && stpe == specSchemaType
-	debugLog("type validator for %q applies %t for %T (kind: %v)\n", t.Path, r, source, kind)
+	debugLog("type validator for %q applies %t for %T (kind: %v)\n", path, r, source, kind)
 	return r
 }
 
-func (t *typeValidator) Validate(data interface{}) *Result {
+func (t *typeValidator) Validate(path string, data interface{}) *Result {
 	result := new(Result)
 	result.Inc()
 	if data == nil {
 		// nil or zero value for the passed structure require Type: null
 		if len(t.Type) > 0 && !t.Type.Contains(nullType) && !t.Nullable { // TODO: if a property is not required it also passes this
-			return errorHelp.sErr(errors.InvalidType(t.Path, t.In, strings.Join(t.Type, ","), nullType))
+			return errorHelp.sErr(errors.InvalidType(path, t.In, strings.Join(t.Type, ","), nullType))
 		}
 		return result
 	}
@@ -147,7 +142,7 @@ func (t *typeValidator) Validate(data interface{}) *Result {
 	// infer schema type (JSON) and format from passed data type
 	schType, format := t.schemaInfoForType(data)
 
-	debugLog("path: %s, schType: %s,  format: %s, expType: %s, expFmt: %s, kind: %s", t.Path, schType, format, t.Type, t.Format, val.Kind().String())
+	debugLog("path: %s, schType: %s,  format: %s, expType: %s, expFmt: %s, kind: %s", path, schType, format, t.Type, t.Format, val.Kind().String())
 
 	// check numerical types
 	// TODO: check unsigned ints
@@ -159,7 +154,7 @@ func (t *typeValidator) Validate(data interface{}) *Result {
 
 	if kind != reflect.String && kind != reflect.Slice && t.Format != "" && !(t.Type.Contains(schType) || format == t.Format || isFloatInt || isIntFloat || isLowerInt || isLowerFloat) {
 		// TODO: test case
-		return errorHelp.sErr(errors.InvalidType(t.Path, t.In, t.Format, format))
+		return errorHelp.sErr(errors.InvalidType(path, t.In, t.Format, format))
 	}
 
 	if !(t.Type.Contains(numberType) || t.Type.Contains(integerType)) && t.Format != "" && (kind == reflect.String || kind == reflect.Slice) {
@@ -167,7 +162,7 @@ func (t *typeValidator) Validate(data interface{}) *Result {
 	}
 
 	if !(t.Type.Contains(schType) || isFloatInt || isIntFloat) {
-		return errorHelp.sErr(errors.InvalidType(t.Path, t.In, strings.Join(t.Type, ","), schType))
+		return errorHelp.sErr(errors.InvalidType(path, t.In, strings.Join(t.Type, ","), schType))
 	}
 	return result
 }

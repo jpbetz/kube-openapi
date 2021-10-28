@@ -32,7 +32,6 @@ var (
 
 // SchemaValidator validates data against a JSON schema
 type SchemaValidator struct {
-	Path         string
 	in           string
 	Schema       *spec.Schema
 	validators   []valueValidator
@@ -45,7 +44,7 @@ type SchemaValidator struct {
 //
 // When no pre-parsed *spec.Schema structure is provided, it uses a JSON schema as default. See example.
 func AgainstSchema(schema *spec.Schema, data interface{}, formats strfmt.Registry, options ...Option) error {
-	res := NewSchemaValidator(schema, nil, "", formats, options...).Validate(data)
+	res := NewSchemaValidator(schema, nil, formats, options...).Validate("", data)
 	if res.HasErrors() {
 		return errors.CompositeValidationError(res.Errors...)
 	}
@@ -55,7 +54,7 @@ func AgainstSchema(schema *spec.Schema, data interface{}, formats strfmt.Registr
 // NewSchemaValidator creates a new schema validator.
 //
 // Panics if the provided schema is invalid.
-func NewSchemaValidator(schema *spec.Schema, rootSchema interface{}, root string, formats strfmt.Registry, options ...Option) *SchemaValidator {
+func NewSchemaValidator(schema *spec.Schema, rootSchema interface{}, formats strfmt.Registry, options ...Option) *SchemaValidator {
 	if schema == nil {
 		return nil
 	}
@@ -69,7 +68,6 @@ func NewSchemaValidator(schema *spec.Schema, rootSchema interface{}, root string
 	}
 
 	s := SchemaValidator{
-		Path:         root,
 		in:           "body",
 		Schema:       schema,
 		Root:         rootSchema,
@@ -96,27 +94,22 @@ func NewSchemaValidator(schema *spec.Schema, rootSchema interface{}, root string
 	return &s
 }
 
-// SetPath sets the path for this schema validator
-func (s *SchemaValidator) SetPath(path string) {
-	s.Path = path
-}
-
 // Applies returns true when this schema validator applies
-func (s *SchemaValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (s *SchemaValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	_, ok := source.(*spec.Schema)
 	return ok
 }
 
 // Validate validates the data against the schema
-func (s *SchemaValidator) Validate(data interface{}) *Result {
+func (s *SchemaValidator) Validate(path string, data interface{}) *Result {
 	result := new(Result)
 	if s == nil {
 		return result
 	}
 
 	if data == nil {
-		result.Merge(s.validators[0].Validate(data)) // type validator
-		result.Merge(s.validators[6].Validate(data)) // common validator
+		result.Merge(s.validators[0].Validate(path, data)) // type validator
+		result.Merge(s.validators[6].Validate(path, data)) // common validator
 		return result
 	}
 
@@ -143,7 +136,7 @@ func (s *SchemaValidator) Validate(data interface{}) *Result {
 		if s.Schema.Type.Contains(integerType) { // avoid lossy conversion
 			in, erri := num.Int64()
 			if erri != nil {
-				result.AddErrors(invalidTypeConversionMsg(s.Path, erri))
+				result.AddErrors(invalidTypeConversionMsg(path, erri))
 				result.Inc()
 				return result
 			}
@@ -151,7 +144,7 @@ func (s *SchemaValidator) Validate(data interface{}) *Result {
 		} else {
 			nf, errf := num.Float64()
 			if errf != nil {
-				result.AddErrors(invalidTypeConversionMsg(s.Path, errf))
+				result.AddErrors(invalidTypeConversionMsg(path, errf))
 				result.Inc()
 				return result
 			}
@@ -163,12 +156,12 @@ func (s *SchemaValidator) Validate(data interface{}) *Result {
 	}
 
 	for _, v := range s.validators {
-		if !v.Applies(s.Schema, kind) {
+		if !v.Applies(path, s.Schema, kind) {
 			debugLog("%T does not apply for %v", v, kind)
 			continue
 		}
 
-		err := v.Validate(d)
+		err := v.Validate(path, d)
 		result.Merge(err)
 		result.Inc()
 	}
@@ -177,12 +170,11 @@ func (s *SchemaValidator) Validate(data interface{}) *Result {
 }
 
 func (s *SchemaValidator) typeValidator() valueValidator {
-	return &typeValidator{Type: s.Schema.Type, Nullable: s.Schema.Nullable, Format: s.Schema.Format, In: s.in, Path: s.Path}
+	return &typeValidator{Type: s.Schema.Type, Nullable: s.Schema.Nullable, Format: s.Schema.Format, In: s.in}
 }
 
 func (s *SchemaValidator) commonValidator() valueValidator {
 	return &basicCommonValidator{
-		Path: s.Path,
 		In:   s.in,
 		Enum: s.Schema.Enum,
 	}
@@ -190,7 +182,6 @@ func (s *SchemaValidator) commonValidator() valueValidator {
 
 func (s *SchemaValidator) sliceValidator() valueValidator {
 	return &schemaSliceValidator{
-		Path:            s.Path,
 		In:              s.in,
 		MaxItems:        s.Schema.MaxItems,
 		MinItems:        s.Schema.MinItems,
@@ -205,7 +196,6 @@ func (s *SchemaValidator) sliceValidator() valueValidator {
 
 func (s *SchemaValidator) numberValidator() valueValidator {
 	return &numberValidator{
-		Path:             s.Path,
 		In:               s.in,
 		Default:          s.Schema.Default,
 		MultipleOf:       s.Schema.MultipleOf,
@@ -218,7 +208,6 @@ func (s *SchemaValidator) numberValidator() valueValidator {
 
 func (s *SchemaValidator) stringValidator() valueValidator {
 	return &stringValidator{
-		Path:      s.Path,
 		In:        s.in,
 		MaxLength: s.Schema.MaxLength,
 		MinLength: s.Schema.MinLength,
@@ -228,7 +217,6 @@ func (s *SchemaValidator) stringValidator() valueValidator {
 
 func (s *SchemaValidator) formatValidator() valueValidator {
 	return &formatValidator{
-		Path:         s.Path,
 		In:           s.in,
 		Format:       s.Schema.Format,
 		KnownFormats: s.KnownFormats,
@@ -237,12 +225,11 @@ func (s *SchemaValidator) formatValidator() valueValidator {
 
 func (s *SchemaValidator) schemaPropsValidator() valueValidator {
 	sch := s.Schema
-	return newSchemaPropsValidator(s.Path, s.in, sch.AllOf, sch.OneOf, sch.AnyOf, sch.Not, sch.Dependencies, s.Root, s.KnownFormats, s.Options.Options()...)
+	return newSchemaPropsValidator(s.in, sch.AllOf, sch.OneOf, sch.AnyOf, sch.Not, sch.Dependencies, s.Root, s.KnownFormats, s.Options.Options()...)
 }
 
 func (s *SchemaValidator) objectValidator() valueValidator {
 	return &objectValidator{
-		Path:                 s.Path,
 		In:                   s.in,
 		MaxProperties:        s.Schema.MaxProperties,
 		MinProperties:        s.Schema.MinProperties,
@@ -257,5 +244,5 @@ func (s *SchemaValidator) objectValidator() valueValidator {
 }
 
 func (s *SchemaValidator) celExpressionValidator() valueValidator {
-	return newCelExpressionValidator(s.Path, s.Schema)
+	return newCelExpressionValidator(s.Schema)
 }

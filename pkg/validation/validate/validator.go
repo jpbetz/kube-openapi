@@ -23,15 +23,11 @@ import (
 
 // valueValidator validates the values it applies to.
 type valueValidator interface {
-	// SetPath sets the exact path of the validator prior to calling Validate.
-	// The exact path contains the map keys and array indices to locate the
-	// value to be validated from the root data element.
-	SetPath(path string)
 	// Applies returns true if the validator applies to the valueKind
 	// from source. Validate will be called if and only if Applies returns true.
-	Applies(source interface{}, valueKind reflect.Kind) bool
+	Applies(path string, source interface{}, kind reflect.Kind) bool
 	// Validate validates the value.
-	Validate(value interface{}) *Result
+	Validate(path string, value interface{}) *Result
 }
 
 type basicCommonValidator struct {
@@ -41,11 +37,7 @@ type basicCommonValidator struct {
 	Enum    []interface{}
 }
 
-func (b *basicCommonValidator) SetPath(path string) {
-	b.Path = path
-}
-
-func (b *basicCommonValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (b *basicCommonValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	switch source.(type) {
 	case *spec.Schema:
 		return true
@@ -53,7 +45,7 @@ func (b *basicCommonValidator) Applies(source interface{}, kind reflect.Kind) bo
 	return false
 }
 
-func (b *basicCommonValidator) Validate(data interface{}) (res *Result) {
+func (b *basicCommonValidator) Validate(path string, data interface{}) (res *Result) {
 	if len(b.Enum) > 0 {
 		for _, enumValue := range b.Enum {
 			actualType := reflect.TypeOf(enumValue)
@@ -72,7 +64,6 @@ func (b *basicCommonValidator) Validate(data interface{}) (res *Result) {
 }
 
 type numberValidator struct {
-	Path             string
 	In               string
 	Default          interface{}
 	MultipleOf       *float64
@@ -85,20 +76,16 @@ type numberValidator struct {
 	Format string
 }
 
-func (n *numberValidator) SetPath(path string) {
-	n.Path = path
-}
-
-func (n *numberValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (n *numberValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	switch source.(type) {
 	case *spec.Schema:
 		isInt := kind >= reflect.Int && kind <= reflect.Uint64
 		isFloat := kind == reflect.Float32 || kind == reflect.Float64
 		r := isInt || isFloat
-		debugLog("schema props validator for %q applies %t for %T (kind: %v) isInt=%t, isFloat=%t\n", n.Path, r, source, kind, isInt, isFloat)
+		debugLog("schema props validator for %q applies %t for %T (kind: %v) isInt=%t, isFloat=%t\n", path, r, source, kind, isInt, isFloat)
 		return r
 	}
-	debugLog("schema props validator for %q applies %t for %T (kind: %v)\n", n.Path, false, source, kind)
+	debugLog("schema props validator for %q applies %t for %T (kind: %v)\n", path, false, source, kind)
 	return false
 }
 
@@ -123,7 +110,7 @@ func (n *numberValidator) Applies(source interface{}, kind reflect.Kind) bool {
 // TODO: consider replacing boundary check errors by simple warnings.
 //
 // TODO: default boundaries with MAX_SAFE_INTEGER are not checked (specific to json.Number?)
-func (n *numberValidator) Validate(val interface{}) *Result {
+func (n *numberValidator) Validate(path string, val interface{}) *Result {
 	res := new(Result)
 
 	resMultiple := new(Result)
@@ -135,20 +122,20 @@ func (n *numberValidator) Validate(val interface{}) *Result {
 	data := valueHelp.asFloat64(val)
 
 	// Is the provided value within the range of the specified numeric type and format?
-	res.AddErrors(IsValueValidAgainstRange(val, n.Type, n.Format, "Checked", n.Path))
+	res.AddErrors(IsValueValidAgainstRange(val, n.Type, n.Format, "Checked", path))
 
 	// nolint: dupl
 	if n.MultipleOf != nil {
 		// Is the constraint specifier within the range of the specific numeric type and format?
-		resMultiple.AddErrors(IsValueValidAgainstRange(*n.MultipleOf, n.Type, n.Format, "MultipleOf", n.Path))
+		resMultiple.AddErrors(IsValueValidAgainstRange(*n.MultipleOf, n.Type, n.Format, "MultipleOf", path))
 		if resMultiple.IsValid() {
 			// Constraint validated with compatible types
-			if err := MultipleOfNativeType(n.Path, n.In, val, *n.MultipleOf); err != nil {
+			if err := MultipleOfNativeType(path, n.In, val, *n.MultipleOf); err != nil {
 				resMultiple.Merge(errorHelp.sErr(err))
 			}
 		} else {
 			// Constraint nevertheless validated, converted as general number
-			if err := MultipleOf(n.Path, n.In, data, *n.MultipleOf); err != nil {
+			if err := MultipleOf(path, n.In, data, *n.MultipleOf); err != nil {
 				resMultiple.Merge(errorHelp.sErr(err))
 			}
 		}
@@ -157,15 +144,15 @@ func (n *numberValidator) Validate(val interface{}) *Result {
 	// nolint: dupl
 	if n.Maximum != nil {
 		// Is the constraint specifier within the range of the specific numeric type and format?
-		resMaximum.AddErrors(IsValueValidAgainstRange(*n.Maximum, n.Type, n.Format, "Maximum boundary", n.Path))
+		resMaximum.AddErrors(IsValueValidAgainstRange(*n.Maximum, n.Type, n.Format, "Maximum boundary", path))
 		if resMaximum.IsValid() {
 			// Constraint validated with compatible types
-			if err := MaximumNativeType(n.Path, n.In, val, *n.Maximum, n.ExclusiveMaximum); err != nil {
+			if err := MaximumNativeType(path, n.In, val, *n.Maximum, n.ExclusiveMaximum); err != nil {
 				resMaximum.Merge(errorHelp.sErr(err))
 			}
 		} else {
 			// Constraint nevertheless validated, converted as general number
-			if err := Maximum(n.Path, n.In, data, *n.Maximum, n.ExclusiveMaximum); err != nil {
+			if err := Maximum(path, n.In, data, *n.Maximum, n.ExclusiveMaximum); err != nil {
 				resMaximum.Merge(errorHelp.sErr(err))
 			}
 		}
@@ -174,15 +161,15 @@ func (n *numberValidator) Validate(val interface{}) *Result {
 	// nolint: dupl
 	if n.Minimum != nil {
 		// Is the constraint specifier within the range of the specific numeric type and format?
-		resMinimum.AddErrors(IsValueValidAgainstRange(*n.Minimum, n.Type, n.Format, "Minimum boundary", n.Path))
+		resMinimum.AddErrors(IsValueValidAgainstRange(*n.Minimum, n.Type, n.Format, "Minimum boundary", path))
 		if resMinimum.IsValid() {
 			// Constraint validated with compatible types
-			if err := MinimumNativeType(n.Path, n.In, val, *n.Minimum, n.ExclusiveMinimum); err != nil {
+			if err := MinimumNativeType(path, n.In, val, *n.Minimum, n.ExclusiveMinimum); err != nil {
 				resMinimum.Merge(errorHelp.sErr(err))
 			}
 		} else {
 			// Constraint nevertheless validated, converted as general number
-			if err := Minimum(n.Path, n.In, data, *n.Minimum, n.ExclusiveMinimum); err != nil {
+			if err := Minimum(path, n.In, data, *n.Minimum, n.ExclusiveMinimum); err != nil {
 				resMinimum.Merge(errorHelp.sErr(err))
 			}
 		}
@@ -196,45 +183,40 @@ type stringValidator struct {
 	MaxLength *int64
 	MinLength *int64
 	Pattern   string
-	Path      string
 	In        string
 }
 
-func (s *stringValidator) SetPath(path string) {
-	s.Path = path
-}
-
-func (s *stringValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (s *stringValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	switch source.(type) {
 	case *spec.Schema:
 		r := kind == reflect.String
-		debugLog("string validator for %q applies %t for %T (kind: %v)\n", s.Path, r, source, kind)
+		debugLog("string validator for %q applies %t for %T (kind: %v)\n", path, r, source, kind)
 		return r
 	}
-	debugLog("string validator for %q applies %t for %T (kind: %v)\n", s.Path, false, source, kind)
+	debugLog("string validator for %q applies %t for %T (kind: %v)\n", path, false, source, kind)
 	return false
 }
 
-func (s *stringValidator) Validate(val interface{}) *Result {
+func (s *stringValidator) Validate(path string, val interface{}) *Result {
 	data, ok := val.(string)
 	if !ok {
-		return errorHelp.sErr(errors.InvalidType(s.Path, s.In, stringType, val))
+		return errorHelp.sErr(errors.InvalidType(path, s.In, stringType, val))
 	}
 
 	if s.MaxLength != nil {
-		if err := MaxLength(s.Path, s.In, data, *s.MaxLength); err != nil {
+		if err := MaxLength(path, s.In, data, *s.MaxLength); err != nil {
 			return errorHelp.sErr(err)
 		}
 	}
 
 	if s.MinLength != nil {
-		if err := MinLength(s.Path, s.In, data, *s.MinLength); err != nil {
+		if err := MinLength(path, s.In, data, *s.MinLength); err != nil {
 			return errorHelp.sErr(err)
 		}
 	}
 
 	if s.Pattern != "" {
-		if err := Pattern(s.Path, s.In, data, s.Pattern); err != nil {
+		if err := Pattern(path, s.In, data, s.Pattern); err != nil {
 			return errorHelp.sErr(err)
 		}
 	}

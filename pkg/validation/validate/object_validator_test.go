@@ -28,18 +28,18 @@ func itemsFixture() map[string]interface{} {
 }
 
 func expectAllValid(t *testing.T, ov valueValidator, dataValid, dataInvalid map[string]interface{}) {
-	res := ov.Validate(dataValid)
+	res := ov.Validate("", dataValid)
 	assert.Equal(t, 0, len(res.Errors))
 
-	res = ov.Validate(dataInvalid)
+	res = ov.Validate("", dataInvalid)
 	assert.Equal(t, 0, len(res.Errors))
 }
 
 func expectOnlyInvalid(t *testing.T, ov valueValidator, dataValid, dataInvalid map[string]interface{}) {
-	res := ov.Validate(dataValid)
+	res := ov.Validate("", dataValid)
 	assert.Equal(t, 0, len(res.Errors))
 
-	res = ov.Validate(dataInvalid)
+	res = ov.Validate("", dataInvalid)
 	assert.NotEqual(t, 0, len(res.Errors))
 }
 
@@ -76,7 +76,4 @@ func TestTypeArrayMustHaveItems(t *testing.T) {
 // to simulate with specs
 // (this one is a trivial, just to check all methods are filled)
 func TestObjectValidator_EdgeCases(t *testing.T) {
-	s := objectValidator{}
-	s.SetPath("path")
-	assert.Equal(t, "path", s.Path)
 }

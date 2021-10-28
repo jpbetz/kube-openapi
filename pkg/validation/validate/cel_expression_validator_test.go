@@ -207,14 +207,14 @@ func TestCelValueValidator(t *testing.T) {
 					},
 				}
 			}
-			validator := newCelExpressionValidator("", schema)
+			validator := newCelExpressionValidator(schema)
 			if validator == nil {
 				if !tc.isValid {
 					t.Fatalf("Expected a non-nil validator since isValid is expected to be false")
 				}
 				return
 			}
-			result := validator.Validate(tc.input)
+			result := validator.Validate("", tc.input)
 			if result.IsValid() != tc.isValid {
 				t.Fatalf("Expected isValid=%t, but got %t. Errors: %v", tc.isValid, result.IsValid(), result.Errors)
 			}

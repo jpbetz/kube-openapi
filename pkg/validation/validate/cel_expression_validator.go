@@ -23,12 +23,14 @@ import (
 	"reflect"
 )
 
-func newCelExpressionValidator(path string, schema *spec.Schema) valueValidator {
+func newCelExpressionValidator(schema *spec.Schema) valueValidator {
 	rules := &spec.CELValidationRules{}
 	err := schema.Extensions.GetObject("x-kubernetes-validator", rules)
 	if err != nil {
 		// The x-kubernetes-validator fields are validated at CRD registration time, so must be valid by the time they are used for validation
-		panic(fmt.Sprintf("Unexpected error accessing x-kubernetes-validator at %s: %v", err, path))
+		return &celExpressionValidator{Schema: schema, CompileErrors: []error{
+			fmt.Errorf("unexpected error accessing x-kubernetes-validator: %v", err),
+		}}
 	}
 	if len(*rules) == 0 {
 		return nil
@@ -38,24 +40,19 @@ func newCelExpressionValidator(path string, schema *spec.Schema) valueValidator 
 		// Program complication is pre-checked at CRD creation/update time, so we don't expect compilation to fail here,
 		// and it is an internal bug if they do.
 		// But if somehow we get any compilation errors, we track them and then surface them as part of validation.
-		return &celExpressionValidator{Path: path, Schema: schema, CompileErrors: errs}
+		return &celExpressionValidator{Schema: schema, CompileErrors: errs}
 	}
-	return &celExpressionValidator{Path: path, Schema: schema, Rules: *rules, Programs: programs}
+	return &celExpressionValidator{Schema: schema, Rules: *rules, Programs: programs}
 }
 
 type celExpressionValidator struct {
-	Path     string
 	Schema   *spec.Schema
 	CompileErrors []error
 	Rules    spec.CELValidationRules
 	Programs []cel.Program
 }
 
-func (c *celExpressionValidator) SetPath(path string) {
-	c.Path = path
-}
-
-func (c *celExpressionValidator) Applies(source interface{}, _ reflect.Kind) bool {
+func (c *celExpressionValidator) Applies(path string, source interface{}, _ reflect.Kind) bool {
 	switch source.(type) {
 	case *spec.Schema:
 		return true
@@ -63,13 +60,13 @@ func (c *celExpressionValidator) Applies(source interface{}, _ reflect.Kind) boo
 	return false
 }
 
-func (c *celExpressionValidator) Validate(data interface{}) *Result {
+func (c *celExpressionValidator) Validate(path string, data interface{}) *Result {
 	res := new(Result)
 	if len(c.CompileErrors) > 0 {
 		// Program complication is pre-checked at CRD creation/update time, so it is an internal bug if compilation errors to make it this far.
 		// But if somehow we get any, we surface them here as validation errors.
 		for _, e := range c.CompileErrors {
-			res.AddErrors(errors.ErrorExecutingValidatorRule(c.Path, "", "<compilation phase>", e, data))
+			res.AddErrors(errors.ErrorExecutingValidatorRule(path, "", "<compilation phase>", e, data))
 		}
 	}
 	for i, program := range c.Programs {
@@ -84,11 +81,11 @@ func (c *celExpressionValidator) Validate(data interface{}) *Result {
 		vars[utilcel.ScopedVarName] = data
 		evalResult, _, err := program.Eval(vars)
 		if err != nil {
-			res.AddErrors(errors.ErrorExecutingValidatorRule(c.Path, "", rule.Rule, err, data))
+			res.AddErrors(errors.ErrorExecutingValidatorRule(path, "", rule.Rule, err, data))
 			continue
 		}
 		if evalResult.Value() != true {
-			res.AddErrors(errors.FailedValidatorRule(c.Path, "", rule.Rule, rule.Message, data))
+			res.AddErrors(errors.FailedValidatorRule(path, "", rule.Rule, rule.Message, data))
 		}
 	}
 	return res

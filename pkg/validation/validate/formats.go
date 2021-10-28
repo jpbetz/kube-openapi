@@ -23,16 +23,11 @@ import (
 
 type formatValidator struct {
 	Format       string
-	Path         string
 	In           string
 	KnownFormats strfmt.Registry
 }
 
-func (f *formatValidator) SetPath(path string) {
-	f.Path = path
-}
-
-func (f *formatValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (f *formatValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	doit := func() bool {
 		if source == nil {
 			return false
@@ -44,15 +39,15 @@ func (f *formatValidator) Applies(source interface{}, kind reflect.Kind) bool {
 		return false
 	}
 	r := doit()
-	debugLog("format validator for %q applies %t for %T (kind: %v)\n", f.Path, r, source, kind)
+	debugLog("format validator for %q applies %t for %T (kind: %v)\n", path, r, source, kind)
 	return r
 }
 
-func (f *formatValidator) Validate(val interface{}) *Result {
+func (f *formatValidator) Validate(path string, val interface{}) *Result {
 	result := new(Result)
 	debugLog("validating \"%v\" against format: %s", val, f.Format)
 
-	if err := FormatOf(f.Path, f.In, f.Format, val.(string), f.KnownFormats); err != nil {
+	if err := FormatOf(path, f.In, f.Format, val.(string), f.KnownFormats); err != nil {
 		result.AddErrors(err)
 	}
 

@@ -25,11 +25,11 @@ func TestFormatValidator_EdgeCases(t *testing.T) {
 
 	for _, source := range sources {
 		// Default formats for strings
-		assert.True(t, v.Applies(source, reflect.String))
+		assert.True(t, v.Applies("", source, reflect.String))
 		// Do not apply for number formats
-		assert.False(t, v.Applies(source, reflect.Int))
+		assert.False(t, v.Applies("", source, reflect.Int))
 	}
 
-	assert.False(t, v.Applies("A string", reflect.String))
-	assert.False(t, v.Applies(nil, reflect.String))
+	assert.False(t, v.Applies("", "A string", reflect.String))
+	assert.False(t, v.Applies("",nil, reflect.String))
 }

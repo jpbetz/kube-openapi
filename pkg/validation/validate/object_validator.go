@@ -25,7 +25,6 @@ import (
 )
 
 type objectValidator struct {
-	Path                 string
 	In                   string
 	MaxProperties        *int64
 	MinProperties        *int64
@@ -38,44 +37,40 @@ type objectValidator struct {
 	Options              SchemaValidatorOptions
 }
 
-func (o *objectValidator) SetPath(path string) {
-	o.Path = path
-}
-
-func (o *objectValidator) Applies(source interface{}, kind reflect.Kind) bool {
+func (o *objectValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
 	// TODO: this should also work for structs
 	// there is a problem in the type validator where it will be unhappy about null values
 	// so that requires more testing
 	r := reflect.TypeOf(source) == specSchemaType && (kind == reflect.Map || kind == reflect.Struct)
-	debugLog("object validator for %q applies %t for %T (kind: %v)\n", o.Path, r, source, kind)
+	debugLog("object validator for %q applies %t for %T (kind: %v)\n", path, r, source, kind)
 	return r
 }
 
-func (o *objectValidator) isProperties() bool {
-	p := strings.Split(o.Path, ".")
+func (o *objectValidator) isProperties(path string) bool {
+	p := strings.Split(path, ".")
 	return len(p) > 1 && p[len(p)-1] == jsonProperties && p[len(p)-2] != jsonProperties
 }
 
-func (o *objectValidator) isDefault() bool {
-	p := strings.Split(o.Path, ".")
+func (o *objectValidator) isDefault(path string) bool {
+	p := strings.Split(path, ".")
 	return len(p) > 1 && p[len(p)-1] == jsonDefault && p[len(p)-2] != jsonDefault
 }
 
-func (o *objectValidator) isExample() bool {
-	p := strings.Split(o.Path, ".")
+func (o *objectValidator) isExample(path string) bool {
+	p := strings.Split(path, ".")
 	return len(p) > 1 && (p[len(p)-1] == swaggerExample || p[len(p)-1] == swaggerExamples) && p[len(p)-2] != swaggerExample
 }
 
-func (o *objectValidator) Validate(data interface{}) *Result {
+func (o *objectValidator) Validate(path string, data interface{}) *Result {
 	val := data.(map[string]interface{})
 	// TODO: guard against nil data
 	numKeys := int64(len(val))
 
 	if o.MinProperties != nil && numKeys < *o.MinProperties {
-		return errorHelp.sErr(errors.TooFewProperties(o.Path, o.In, *o.MinProperties))
+		return errorHelp.sErr(errors.TooFewProperties(path, o.In, *o.MinProperties))
 	}
 	if o.MaxProperties != nil && numKeys > *o.MaxProperties {
-		return errorHelp.sErr(errors.TooManyProperties(o.Path, o.In, *o.MaxProperties))
+		return errorHelp.sErr(errors.TooManyProperties(path, o.In, *o.MaxProperties))
 	}
 
 	res := new(Result)
@@ -96,7 +91,7 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 
 			if !regularProperty && !matched {
 				// Special properties "$schema" and "id" are ignored
-				res.AddErrors(errors.PropertyNotAllowed(o.Path, o.In, k))
+				res.AddErrors(errors.PropertyNotAllowed(path, o.In, k))
 			}
 		}
 	} else {
@@ -108,17 +103,17 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 			// BUG(fredbi): succeededOnce is always false
 
 			// NOTE: how about regular properties which do not match patternProperties?
-			matched, succeededOnce, _ := o.validatePatternProperty(key, value, res)
+			matched, succeededOnce, _ := o.validatePatternProperty(path, key, value, res)
 
 			if !(regularProperty || matched || succeededOnce) {
 
 				// Cases: properties which are not regular properties and have not been matched by the PatternProperties validator
 				if o.AdditionalProperties != nil && o.AdditionalProperties.Schema != nil {
 					// AdditionalProperties as Schema
-					res.Merge(NewSchemaValidator(o.AdditionalProperties.Schema, o.Root, o.Path+"."+key, o.KnownFormats, o.Options.Options()...).Validate(value))
+					res.Merge(NewSchemaValidator(o.AdditionalProperties.Schema, o.Root, o.KnownFormats, o.Options.Options()...).Validate(path+"."+key, value))
 				} else if regularProperty && !(matched || succeededOnce) {
 					// TODO: this is dead code since regularProperty=false here
-					res.AddErrors(errors.FailedAllPatternProperties(o.Path, o.In, key))
+					res.AddErrors(errors.FailedAllPatternProperties(path, o.In, key))
 				}
 			}
 		}
@@ -131,13 +126,13 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 	// - regular Property
 	for pName, pSchema := range o.Properties {
 		rName := pName
-		if o.Path != "" {
-			rName = o.Path + "." + pName
+		if path != "" {
+			rName = path + "." + pName
 		}
 
 		// Recursively validates each property against its schema
 		if v, ok := val[pName]; ok {
-			r := NewSchemaValidator(&pSchema, o.Root, rName, o.KnownFormats, o.Options.Options()...).Validate(v)
+			r := NewSchemaValidator(&pSchema, o.Root, o.KnownFormats, o.Options.Options()...).Validate(rName, v)
 			res.Merge(r)
 		}
 	}
@@ -146,7 +141,7 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 	if len(o.Required) > 0 {
 		for _, k := range o.Required {
 			if _, ok := val[k]; !ok && !createdFromDefaults[k] {
-				res.AddErrors(errors.Required(o.Path+"."+k, o.In))
+				res.AddErrors(errors.Required(path+"."+k, o.In))
 				continue
 			}
 		}
@@ -156,11 +151,11 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 	// TODO: it looks like we have done that twice in many cases
 	for key, value := range val {
 		_, regularProperty := o.Properties[key]
-		matched, _ /*succeededOnce*/, patterns := o.validatePatternProperty(key, value, res)
+		matched, _ /*succeededOnce*/, patterns := o.validatePatternProperty(path, key, value, res)
 		if !regularProperty && (matched /*|| succeededOnce*/) {
 			for _, pName := range patterns {
 				if v, ok := o.PatternProperties[pName]; ok {
-					res.Merge(NewSchemaValidator(&v, o.Root, o.Path+"."+key, o.KnownFormats, o.Options.Options()...).Validate(value))
+					res.Merge(NewSchemaValidator(&v, o.Root, o.KnownFormats, o.Options.Options()...).Validate(path+"."+key, value))
 				}
 			}
 		}
@@ -169,7 +164,7 @@ func (o *objectValidator) Validate(data interface{}) *Result {
 }
 
 // TODO: succeededOnce is not used anywhere
-func (o *objectValidator) validatePatternProperty(key string, value interface{}, result *Result) (bool, bool, []string) {
+func (o *objectValidator) validatePatternProperty(path string, key string, value interface{}, result *Result) (bool, bool, []string) {
 	matched := false
 	succeededOnce := false
 	var patterns []string
@@ -179,9 +174,9 @@ func (o *objectValidator) validatePatternProperty(key string, value interface{},
 		if match, _ := regexp.MatchString(k, key); match {
 			patterns = append(patterns, k)
 			matched = true
-			validator := NewSchemaValidator(&sch, o.Root, o.Path+"."+key, o.KnownFormats, o.Options.Options()...)
+			validator := NewSchemaValidator(&sch, o.Root, o.KnownFormats, o.Options.Options()...)
 
-			res := validator.Validate(value)
+			res := validator.Validate(path+"."+key, value)
 			result.Merge(res)
 		}
 	}
