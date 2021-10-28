@@ -31,7 +31,43 @@ type schemaSliceValidator struct {
 	Items           *spec.SchemaOrArray
 	Root            interface{}
 	KnownFormats    strfmt.Registry
-	Options         SchemaValidatorOptions
+
+	itemSchemaValidator      *SchemaValidator
+	itemSchemasValidators    []*SchemaValidator
+	additionalItemsValidator *SchemaValidator
+}
+
+func newSchemaSliceValidator(in string, maxItems, minItems *int64, uniqueItems bool, additionalItems *spec.SchemaOrBool,
+	items *spec.SchemaOrArray, root interface{}, knownFormats strfmt.Registry, options ...Option) valueValidator {
+	var itemSchemaValidator *SchemaValidator
+	if items != nil && items.Schema != nil {
+		itemSchemaValidator = NewSchemaValidator(items.Schema, root, knownFormats, options...)
+	}
+	var itemSchemasValidators []*SchemaValidator
+	if items != nil && len(items.Schemas) > 0 {
+		itemsSize := len(items.Schemas)
+		itemSchemasValidators = make([]*SchemaValidator, itemsSize)
+		for i := 0; i < itemsSize; i++ {
+			itemSchemasValidators[i] = NewSchemaValidator(&items.Schemas[i], root, knownFormats, options...)
+		}
+	}
+	var additionalItemsValidator *SchemaValidator
+	if additionalItems != nil && additionalItems.Schema != nil {
+		additionalItemsValidator = NewSchemaValidator(additionalItems.Schema, root, knownFormats, options...)
+	}
+	return &schemaSliceValidator{
+		In:                       in,
+		MaxItems:                 maxItems,
+		MinItems:                 minItems,
+		UniqueItems:              uniqueItems,
+		AdditionalItems:          additionalItems,
+		Items:                    items,
+		Root:                     root,
+		KnownFormats:             knownFormats,
+		itemSchemaValidator:      itemSchemaValidator,
+		itemSchemasValidators:    itemSchemasValidators,
+		additionalItemsValidator: additionalItemsValidator,
+	}
 }
 
 func (s *schemaSliceValidator) Applies(path string, source interface{}, kind reflect.Kind) bool {
@@ -48,19 +84,18 @@ func (s *schemaSliceValidator) Validate(path string, data interface{}) *Result {
 	val := reflect.ValueOf(data)
 	size := val.Len()
 
-	if s.Items != nil && s.Items.Schema != nil {
-		validator := NewSchemaValidator(s.Items.Schema, s.Root, s.KnownFormats, s.Options.Options()...)
+	if s.itemSchemaValidator != nil {
 		for i := 0; i < size; i++ {
 			value := val.Index(i)
-			result.Merge(validator.Validate(fmt.Sprintf("%s.%d", path, i), value.Interface()))
+			result.Merge(s.itemSchemaValidator.Validate(fmt.Sprintf("%s.%d", path, i), value.Interface()))
 		}
 	}
 
 	itemsSize := 0
-	if s.Items != nil && len(s.Items.Schemas) > 0 {
+	if  len(s.itemSchemasValidators) > 0 {
 		itemsSize = len(s.Items.Schemas)
 		for i := 0; i < itemsSize; i++ {
-			validator := NewSchemaValidator(&s.Items.Schemas[i], s.Root, s.KnownFormats, s.Options.Options()...)
+			validator := s.itemSchemasValidators[i]
 			if val.Len() <= i {
 				break
 			}
@@ -71,10 +106,9 @@ func (s *schemaSliceValidator) Validate(path string, data interface{}) *Result {
 		if s.Items != nil && len(s.Items.Schemas) > 0 && !s.AdditionalItems.Allows {
 			result.AddErrors(arrayDoesNotAllowAdditionalItemsMsg())
 		}
-		if s.AdditionalItems.Schema != nil {
+		if s.additionalItemsValidator != nil {
 			for i := itemsSize; i < size-itemsSize+1; i++ {
-				validator := NewSchemaValidator(s.AdditionalItems.Schema, s.Root, s.KnownFormats, s.Options.Options()...)
-				result.Merge(validator.Validate(fmt.Sprintf("%s.%d", path, i), val.Index(i).Interface()))
+				result.Merge(s.additionalItemsValidator.Validate(fmt.Sprintf("%s.%d", path, i), val.Index(i).Interface()))
 			}
 		}
 	}

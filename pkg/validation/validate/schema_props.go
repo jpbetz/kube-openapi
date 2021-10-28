@@ -33,12 +33,12 @@ type schemaPropsValidator struct {
 	allOfValidators []SchemaValidator
 	oneOfValidators []SchemaValidator
 	notValidator    *SchemaValidator
+	depValidators   map[string]*SchemaValidator
 	Root            interface{}
 	KnownFormats    strfmt.Registry
-	Options         SchemaValidatorOptions
 }
 
-func newSchemaPropsValidator(in string, allOf, oneOf, anyOf []spec.Schema, not *spec.Schema, deps spec.Dependencies, root interface{}, formats strfmt.Registry, options ...Option) *schemaPropsValidator {
+func newSchemaPropsValidator(in string, allOf, oneOf, anyOf []spec.Schema, not *spec.Schema, deps spec.Dependencies, root interface{}, formats strfmt.Registry, options ...Option) valueValidator {
 	var anyValidators []SchemaValidator
 	for _, v := range anyOf {
 		v := v
@@ -59,11 +59,16 @@ func newSchemaPropsValidator(in string, allOf, oneOf, anyOf []spec.Schema, not *
 	if not != nil {
 		notValidator = NewSchemaValidator(not, root, formats, options...)
 	}
-
-	schOptions := &SchemaValidatorOptions{}
-	for _, o := range options {
-		o(schOptions)
+	var depValidators = map[string]*SchemaValidator{}
+	if len(deps) > 0 {
+		depValidators = make(map[string]*SchemaValidator, len(deps))
+		for k, d := range deps {
+			if d.Schema != nil {
+				depValidators[k] = NewSchemaValidator(d.Schema, root, formats, options...)
+			}
+		}
 	}
+
 	return &schemaPropsValidator{
 		In:              in,
 		AllOf:           allOf,
@@ -75,9 +80,9 @@ func newSchemaPropsValidator(in string, allOf, oneOf, anyOf []spec.Schema, not *
 		allOfValidators: allValidators,
 		oneOfValidators: oneValidators,
 		notValidator:    notValidator,
+		depValidators:   depValidators,
 		Root:            root,
 		KnownFormats:    formats,
-		Options:         *schOptions,
 	}
 }
 
@@ -211,8 +216,8 @@ func (s *schemaPropsValidator) Validate(path string, data interface{}) *Result {
 		for key := range val {
 			if dep, ok := s.Dependencies[key]; ok {
 
-				if dep.Schema != nil {
-					mainResult.Merge(NewSchemaValidator(dep.Schema, s.Root, s.KnownFormats, s.Options.Options()...).Validate(path+"."+key, data))
+				if validator, ok := s.depValidators[key]; ok {
+					mainResult.Merge(validator.Validate(path+"."+key, data))
 					continue
 				}
 

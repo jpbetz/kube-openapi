@@ -181,17 +181,17 @@ func (s *SchemaValidator) commonValidator() valueValidator {
 }
 
 func (s *SchemaValidator) sliceValidator() valueValidator {
-	return &schemaSliceValidator{
-		In:              s.in,
-		MaxItems:        s.Schema.MaxItems,
-		MinItems:        s.Schema.MinItems,
-		UniqueItems:     s.Schema.UniqueItems,
-		AdditionalItems: s.Schema.AdditionalItems,
-		Items:           s.Schema.Items,
-		Root:            s.Root,
-		KnownFormats:    s.KnownFormats,
-		Options:         s.Options,
-	}
+	return newSchemaSliceValidator(
+		s.in,
+		s.Schema.MaxItems,
+		s.Schema.MinItems,
+		s.Schema.UniqueItems,
+		s.Schema.AdditionalItems,
+		s.Schema.Items,
+		s.Root,
+		s.KnownFormats,
+		s.Options.Options()...,
+	)
 }
 
 func (s *SchemaValidator) numberValidator() valueValidator {
@@ -229,18 +229,18 @@ func (s *SchemaValidator) schemaPropsValidator() valueValidator {
 }
 
 func (s *SchemaValidator) objectValidator() valueValidator {
-	return &objectValidator{
-		In:                   s.in,
-		MaxProperties:        s.Schema.MaxProperties,
-		MinProperties:        s.Schema.MinProperties,
-		Required:             s.Schema.Required,
-		Properties:           s.Schema.Properties,
-		AdditionalProperties: s.Schema.AdditionalProperties,
-		PatternProperties:    s.Schema.PatternProperties,
-		Root:                 s.Root,
-		KnownFormats:         s.KnownFormats,
-		Options:              s.Options,
-	}
+	return newObjectValidator(
+		s.in,
+		s.Schema.MaxProperties,
+		s.Schema.MinProperties,
+		s.Schema.Required,
+		s.Schema.Properties,
+		s.Schema.AdditionalProperties,
+		s.Schema.PatternProperties,
+		s.Root,
+		s.KnownFormats,
+		s.Options.Options()...,
+	)
 }
 
 func (s *SchemaValidator) celExpressionValidator() valueValidator {
