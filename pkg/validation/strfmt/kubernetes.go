@@ -17,8 +17,10 @@ package strfmt
 
 import (
 	"encoding/json"
-	"net"
+	"net/netip"
 	"strings"
+
+	"github.com/blang/semver/v4"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -426,222 +428,68 @@ func (ip *IP) UnmarshalJSON(data []byte) error {
 
 // Validation functions for Kubernetes formats
 func isDNS1035Label(str string) bool {
-	errs := validation.IsDNS1035Label(str)
-	return len(errs) == 0
+	return len(validation.IsDNS1035Label(str)) == 0
 }
 
 func isDNS1035LabelPrefix(str string) bool {
-	// A prefix must follow the same rules as a full label, except it can end with a hyphen
-	if str == "" {
-		return false
-	}
-	if len(str) > 63 {
-		return false
-	}
-	// Must start with a letter (not a number)
-	if !(str[0] >= 'a' && str[0] <= 'z') {
-		return false
-	}
-	for i := 0; i < len(str); i++ {
-		c := str[i]
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
-			return false
-		}
-	}
-	return true
+	return isDNS1035Label(maskTrailingDash(str))
 }
 
 func isDNS1123Label(str string) bool {
-	errs := validation.IsDNS1123Label(str)
-	return len(errs) == 0
+	return len(validation.IsDNS1123Label(str)) == 0
 }
 
 func isDNS1123LabelPrefix(str string) bool {
-	// A prefix must follow the same rules as a full label, except it can end with a hyphen
-	if str == "" {
-		return false
-	}
-	if len(str) > 63 {
-		return false
-	}
-	if str[0] == '-' {
-		return false
-	}
-	for i := 0; i < len(str); i++ {
-		c := str[i]
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
-			return false
-		}
-	}
-	return true
+	return isDNS1123Label(maskTrailingDash(str))
 }
 
 func isDNS1123Subdomain(str string) bool {
-	// First check the total length
-	if len(str) > 253 {
-		return false
-	}
-
-	// Then check each segment
-	segments := strings.Split(str, ".")
-	for _, segment := range segments {
-		if len(segment) > 63 {
-			return false
-		}
-	}
-
-	// Finally use the standard validation
-	errs := validation.IsDNS1123Subdomain(str)
-	return len(errs) == 0
+	return len(validation.IsDNS1123Subdomain(str)) == 0
 }
 
 func isDNS1123SubdomainPrefix(str string) bool {
-	// A prefix must follow the same rules as a full subdomain, except the last segment can end with a hyphen
-	if str == "" {
-		return false
-	}
-	if len(str) > 253 {
-		return false
-	}
-	segments := strings.Split(str, ".")
-	for i, segment := range segments {
-		if segment == "" {
-			return false
-		}
-		if len(segment) > 63 {
-			return false
-		}
-		if segment[0] == '-' {
-			return false
-		}
-		// Only validate the ending hyphen for non-final segments
-		if i < len(segments)-1 && segment[len(segment)-1] == '-' {
-			return false
-		}
-		for _, c := range segment {
-			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
-				return false
-			}
-		}
-	}
-	return true
+	return isDNS1123Subdomain(maskTrailingDash(str))
 }
 
 func isQualifiedName(str string) bool {
-	// Must contain at least one '/'
-	parts := strings.Split(str, "/")
-	if len(parts) < 2 {
-		return false
-	}
-
-	// The part before the first '/' must be a valid DNS1123 subdomain
-	if !isDNS1123Subdomain(parts[0]) {
-		return false
-	}
-
-	// The remaining parts must be valid path segments
-	for _, part := range parts[1:] {
-		if part == "" {
-			return false
-		}
-		// Path segments can't start or end with a hyphen
-		if strings.HasPrefix(part, "-") || strings.HasSuffix(part, "-") {
-			return false
-		}
-		// Path segments can contain alphanumeric characters, '-', '_', and '.'
-		for _, c := range part {
-			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.') {
-				return false
-			}
-		}
-	}
-
-	return true
+	return len(validation.IsQualifiedName(str)) == 0
 }
 
 func isQuantity(str string) bool {
-	// First try to parse the quantity
 	_, err := resource.ParseQuantity(str)
+	return err == nil
+}
+
+func isIP(str string) bool {
+	addr, err := netip.ParseAddr(str)
 	if err != nil {
 		return false
 	}
 
-	// Then validate the format
-	// Remove any leading sign
-	if str != "" && (str[0] == '+' || str[0] == '-') {
-		str = str[1:]
-	}
-
-	// Split into number and suffix
-	var number, suffix string
-	for i, c := range str {
-		if !(c >= '0' && c <= '9' || c == '.') {
-			number = str[:i]
-			suffix = str[i:]
-			break
-		}
-	}
-	if suffix == "" {
-		number = str
-	}
-
-	// Validate number format (should be a valid decimal)
-	dots := 0
-	for _, c := range number {
-		if c == '.' {
-			dots++
-		} else if !(c >= '0' && c <= '9') {
-			return false
-		}
-	}
-	if dots > 1 {
+	if addr.Zone() != "" {
 		return false
 	}
 
-	// Validate suffix
-	validSuffixes := map[string]bool{
-		"":   true,
-		"m":  true,
-		"u":  true,
-		"µ":  true,
-		"n":  true,
-		"Ki": true,
-		"Mi": true,
-		"Gi": true,
-		"Ti": true,
-		"Pi": true,
-		"Ei": true,
+	if addr.Is4In6() {
+		return false
 	}
 
-	return validSuffixes[suffix]
-}
-
-func isIP(str string) bool {
-	// Use net.ParseIP to validate both IPv4 and IPv6 addresses
-	ip := net.ParseIP(str)
-	return ip != nil
+	return true
 }
 
 // Semver represents a semantic version string that follows the semver.org specification.
 //
-// Requirements:
-// - Must follow the format MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
-// - MAJOR, MINOR, and PATCH must be non-negative integers
-// - PRERELEASE and BUILD are optional and must be alphanumeric plus hyphens [0-9A-Za-z-]
-//
-// Examples:
-// - Valid: "1.0.0", "2.3.4-alpha", "1.0.0-beta+exp.sha.5114f85"
-// - Invalid: "1", "1.0", "1.a.2", "1.0.0beta"
+// swagger:strfmt semver
 type Semver string
 
 // MarshalText turns this instance into text
 func (s Semver) MarshalText() ([]byte, error) {
-	return []byte(string(s)), nil
+	return []byte(s), nil
 }
 
 // UnmarshalText hydrates this instance from text
 func (s *Semver) UnmarshalText(data []byte) error {
-	*(s) = Semver(string(data))
+	*(s) = Semver(data)
 	return nil
 }
 
@@ -680,77 +528,8 @@ func (s *Semver) DeepCopy() *Semver {
 }
 
 func isSemver(str string) bool {
-	// Basic semver regex pattern
-	// This is a simplified version - a full semver implementation would use a more comprehensive regex
-	parts := strings.Split(str, ".")
-	if len(parts) != 3 {
-		return false
-	}
-
-	// Split the last part to handle prerelease and build metadata
-	lastParts := strings.Split(parts[2], "-")
-	if len(lastParts) > 2 {
-		return false
-	}
-
-	// Check if each numeric part is a valid non-negative integer
-	for i := 0; i < 2; i++ {
-		if !isNonNegativeInteger(parts[i]) {
-			return false
-		}
-	}
-
-	// Check patch version (before any - or +)
-	patchParts := strings.Split(lastParts[0], "+")
-	if !isNonNegativeInteger(patchParts[0]) {
-		return false
-	}
-
-	// If there's a prerelease version, validate it
-	if len(lastParts) == 2 {
-		prerelease := strings.Split(lastParts[1], "+")[0]
-		if !isValidPrerelease(prerelease) {
-			return false
-		}
-	}
-
-	// If there's build metadata, validate it
-	if strings.Contains(str, "+") {
-		buildParts := strings.Split(str, "+")
-		if len(buildParts) != 2 || !isValidBuildMetadata(buildParts[1]) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func isNonNegativeInteger(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func isValidPrerelease(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	for _, c := range s {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-') {
-			return false
-		}
-	}
-	return true
-}
-
-func isValidBuildMetadata(s string) bool {
-	return isValidPrerelease(s)
+	_, err := semver.Parse(str)
+	return err == nil
 }
 
 func init() {
@@ -919,4 +698,11 @@ func (ip *IP) DeepCopy() *IP {
 	out := new(IP)
 	ip.DeepCopyInto(out)
 	return out
+}
+
+func maskTrailingDash(name string) string {
+	if len(name) > 1 && strings.HasSuffix(name, "-") {
+		return name[:len(name)-2] + "a"
+	}
+	return name
 }

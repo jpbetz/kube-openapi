@@ -6,6 +6,7 @@ toolchain go1.23.7
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
+	github.com/blang/semver/v4 v4.0.0
 	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/go-openapi/jsonreference v0.20.2
 	github.com/go-openapi/swag v0.23.0
@@ -20,6 +21,7 @@ require (
 	golang.org/x/tools v0.26.0
 	google.golang.org/protobuf v1.35.1
 	gopkg.in/yaml.v3 v3.0.1
+	k8s.io/apimachinery v0.32.3
 	k8s.io/gengo/v2 v2.0.0-20240826214909-a7b603a56eb7
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
@@ -51,5 +53,4 @@ require (
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/apimachinery v0.32.3 // indirect
 )

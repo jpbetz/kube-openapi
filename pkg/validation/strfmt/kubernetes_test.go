@@ -115,13 +115,12 @@ func TestDNS1123Subdomain(t *testing.T) {
 	}
 
 	invalidSubdomains := []string{
-		"",                               // empty
-		"-abc.def",                       // segment starts with hyphen
-		"abc-.def",                       // segment ends with hyphen
-		"ABC.def",                        // uppercase
-		"a_b.def",                        // contains underscore
-		strings.Repeat("a", 64) + ".def", // segment too long
-		strings.Repeat("a.", 127) + "a",  // total length > 253
+		"",                              // empty
+		"-abc.def",                      // segment starts with hyphen
+		"abc-.def",                      // segment ends with hyphen
+		"ABC.def",                       // uppercase
+		"a_b.def",                       // contains underscore
+		strings.Repeat("a.", 127) + "a", // total length > 253
 	}
 
 	for _, subdomain := range validSubdomains {
@@ -148,15 +147,12 @@ func TestDNS1123SubdomainPrefix(t *testing.T) {
 func TestQualifiedName(t *testing.T) {
 	validNames := []string{
 		"example.com/name",
-		"example.com/name/subname",
 		"example.com/name_with_underscore",
 		"example.com/name-with-dash",
-		"k8s.io/api/core/v1",
 	}
 
 	invalidNames := []string{
 		"",                                 // empty
-		"name",                             // no namespace
 		"/name",                            // no namespace
 		"example.com/",                     // no name
 		"example.com//",                    // empty segment
@@ -186,6 +182,8 @@ func TestQuantity(t *testing.T) {
 		"1",
 		"1.5",
 		"1Gi",
+		"100M",
+		"0.01M",
 		"100Mi",
 		"100Ki",
 		"100m",
@@ -195,12 +193,10 @@ func TestQuantity(t *testing.T) {
 	}
 
 	invalidQuantities := []string{
-		"",          // empty
-		"hello",     // not a number
-		"1G",        // invalid suffix
-		"1.1.1",     // invalid number
-		"1.0.0Gi",   // invalid number
-		"0.000001k", // too small
+		"",        // empty
+		"invalid", // not a number
+		"1.1.1",   // invalid number
+		"1.0.0Gi", // invalid number
 	}
 
 	for _, q := range validQuantities {
