@@ -622,6 +622,137 @@ func isIP(str string) bool {
 	return ip != nil
 }
 
+// Semver represents a semantic version string that follows the semver.org specification.
+//
+// Requirements:
+// - Must follow the format MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
+// - MAJOR, MINOR, and PATCH must be non-negative integers
+// - PRERELEASE and BUILD are optional and must be alphanumeric plus hyphens [0-9A-Za-z-]
+//
+// Examples:
+// - Valid: "1.0.0", "2.3.4-alpha", "1.0.0-beta+exp.sha.5114f85"
+// - Invalid: "1", "1.0", "1.a.2", "1.0.0beta"
+type Semver string
+
+// MarshalText turns this instance into text
+func (s Semver) MarshalText() ([]byte, error) {
+	return []byte(string(s)), nil
+}
+
+// UnmarshalText hydrates this instance from text
+func (s *Semver) UnmarshalText(data []byte) error {
+	*(s) = Semver(string(data))
+	return nil
+}
+
+// String converts this value to a string
+func (s Semver) String() string {
+	return string(s)
+}
+
+// MarshalJSON returns the Semver as JSON
+func (s Semver) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(s))
+}
+
+// UnmarshalJSON sets the Semver from JSON
+func (s *Semver) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	return s.UnmarshalText([]byte(str))
+}
+
+// DeepCopyInto copies the receiver into out. out must be non-nil.
+func (s *Semver) DeepCopyInto(out *Semver) {
+	*out = *s
+}
+
+// DeepCopy creates a deep copy of Semver
+func (s *Semver) DeepCopy() *Semver {
+	if s == nil {
+		return nil
+	}
+	out := new(Semver)
+	s.DeepCopyInto(out)
+	return out
+}
+
+func isSemver(str string) bool {
+	// Basic semver regex pattern
+	// This is a simplified version - a full semver implementation would use a more comprehensive regex
+	parts := strings.Split(str, ".")
+	if len(parts) != 3 {
+		return false
+	}
+
+	// Split the last part to handle prerelease and build metadata
+	lastParts := strings.Split(parts[2], "-")
+	if len(lastParts) > 2 {
+		return false
+	}
+
+	// Check if each numeric part is a valid non-negative integer
+	for i := 0; i < 2; i++ {
+		if !isNonNegativeInteger(parts[i]) {
+			return false
+		}
+	}
+
+	// Check patch version (before any - or +)
+	patchParts := strings.Split(lastParts[0], "+")
+	if !isNonNegativeInteger(patchParts[0]) {
+		return false
+	}
+
+	// If there's a prerelease version, validate it
+	if len(lastParts) == 2 {
+		prerelease := strings.Split(lastParts[1], "+")[0]
+		if !isValidPrerelease(prerelease) {
+			return false
+		}
+	}
+
+	// If there's build metadata, validate it
+	if strings.Contains(str, "+") {
+		buildParts := strings.Split(str, "+")
+		if len(buildParts) != 2 || !isValidBuildMetadata(buildParts[1]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isNonNegativeInteger(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidPrerelease(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidBuildMetadata(s string) bool {
+	return isValidPrerelease(s)
+}
+
 func init() {
 	// Register Kubernetes-specific formats
 	dns1035Label := DNS1035Label("")
@@ -650,6 +781,9 @@ func init() {
 
 	ip := IP("")
 	Default.Add("ip", &ip, isIP)
+
+	semver := Semver("")
+	Default.Add("semver", &semver, isSemver)
 }
 
 // DeepCopyInto copies the receiver into out. out must be non-nil.

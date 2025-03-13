@@ -102,6 +102,8 @@ func (t *typeValidator) schemaInfoForType(data interface{}) (string, string) {
 		return stringType, stringFormatQuantity
 	case strfmt.IP, *strfmt.IP:
 		return stringType, stringFormatIP
+	case strfmt.Semver, *strfmt.Semver:
+		return stringType, "semver"
 	default:
 		val := reflect.ValueOf(data)
 		tpe := val.Type()
