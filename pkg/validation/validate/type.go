@@ -81,8 +81,27 @@ func (t *typeValidator) schemaInfoForType(data interface{}) (string, string) {
 		return stringType, stringFormatUUID4
 	case strfmt.UUID5, *strfmt.UUID5:
 		return stringType, stringFormatUUID5
-	// TODO: missing binary (io.ReadCloser)
-	// TODO: missing json.Number
+	// New format types
+	case strfmt.DNS1035Label, *strfmt.DNS1035Label:
+		return stringType, stringFormatDNS1035Label
+	case strfmt.DNS1035LabelPrefix, *strfmt.DNS1035LabelPrefix:
+		return stringType, stringFormatDNS1035LabelPrefix
+	case strfmt.DNS1123Label, *strfmt.DNS1123Label:
+		return stringType, stringFormatDNS1123Label
+	case strfmt.DNS1123LabelPrefix, *strfmt.DNS1123LabelPrefix:
+		return stringType, stringFormatDNS1123LabelPrefix
+	case strfmt.DNS1123Subdomain, *strfmt.DNS1123Subdomain:
+		return stringType, stringFormatDNS1123Subdomain
+	case strfmt.DNS1123SubdomainPrefix, *strfmt.DNS1123SubdomainPrefix:
+		return stringType, stringFormatDNS1123SubdomainPrefix
+	case strfmt.CIDR, *strfmt.CIDR:
+		return stringType, stringFormatCIDR
+	case strfmt.QualifiedName, *strfmt.QualifiedName:
+		return stringType, stringFormatQualifiedName
+	case strfmt.Quantity, *strfmt.Quantity:
+		return stringType, stringFormatQuantity
+	case strfmt.IP, *strfmt.IP:
+		return stringType, stringFormatIP
 	default:
 		val := reflect.ValueOf(data)
 		tpe := val.Type()
