@@ -18,12 +18,14 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-openapi/swag"
+
 	"k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/kube-openapi/pkg/validation/strfmt"
 )
@@ -104,6 +106,33 @@ func TestSchemaValidator_PatternProperties(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(inputJSON), &input))
 	assert.Error(t, AgainstSchema(schema, input, strfmt.Default))
 
+}
+
+func TestSchemaValidator_PropertyNames(t *testing.T) {
+	var schemaJSON = `
+{
+    "additionalProperties": {
+		"type": "string"
+	},
+    "x-kubernetes-property-names": {
+		"type": "string",
+		"maxLength": 10
+    }
+}`
+
+	schema := new(spec.Schema)
+	require.NoError(t, json.Unmarshal([]byte(schemaJSON), schema))
+
+	var input map[string]interface{}
+
+	// ok
+	var inputJSON = `{"a": "a","b": "b"}`
+	require.NoError(t, json.Unmarshal([]byte(inputJSON), &input))
+	assert.NoError(t, AgainstSchema(schema, input, strfmt.Default))
+
+	// fail maxLength
+	input[strings.Repeat("c", 11)] = "c"
+	assert.Error(t, AgainstSchema(schema, input, strfmt.Default))
 }
 
 func TestSchemaValidator_ReferencePanic(t *testing.T) {

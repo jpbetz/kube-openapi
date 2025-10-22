@@ -15,9 +15,11 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	kubeopenapierrors "k8s.io/kube-openapi/pkg/validation/errors"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/kube-openapi/pkg/validation/strfmt"
@@ -152,6 +154,73 @@ func TestMinPropertiesMaxPropertiesDontShortCircuit(t *testing.T) {
 		kubeopenapierrors.InvalidType(s.Path+"."+"intField", s.In, "integer", "string"),
 		kubeopenapierrors.Required(s.Path+"."+"requiredField", s.In),
 	}, res.Errors)
+}
+
+func TestPropertyNameValidations(t *testing.T) {
+	cases := []struct {
+		name                string
+		propertyNamesSchema spec.SchemaProps
+		data                map[string]interface{}
+		expectedErr         []*kubeopenapierrors.Validation
+	}{
+		{
+			name: "valid",
+			propertyNamesSchema: spec.SchemaProps{
+				Type:      spec.StringOrArray{"string"},
+				MaxLength: ptr(int64(10)),
+			},
+			data: map[string]interface{}{
+				"a": "a",
+				"b": "b",
+			},
+		},
+		{
+			name: "invalid key length",
+			propertyNamesSchema: spec.SchemaProps{
+				Type:      spec.StringOrArray{"string"},
+				MaxLength: ptr(int64(10)),
+			},
+			data: map[string]interface{}{
+				strings.Repeat("a", 11): "a",
+				"b":                     "b",
+			},
+			expectedErr: []*kubeopenapierrors.Validation{
+				kubeopenapierrors.TooLong("value."+strings.Repeat("a", 11), "body", 10, strings.Repeat("a", 11)),
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+
+			validator := objectValidator{
+				In:           "body",
+				Path:         "value",
+				KnownFormats: strfmt.Default,
+				XPropertyNames: &spec.Schema{
+					SchemaProps: c.propertyNamesSchema,
+				},
+				AdditionalProperties: &spec.SchemaOrBool{
+					Allows: true,
+					Schema: &spec.Schema{
+						SchemaProps: spec.SchemaProps{
+							Type: spec.StringOrArray{"string"},
+						},
+					},
+				},
+				Options: SchemaValidatorOptions{
+					NewValidatorForIndex: func(index int, schema *spec.Schema, rootSchema interface{}, root string, formats strfmt.Registry, opts ...Option) ValueValidator {
+						return NewSchemaValidator(schema, rootSchema, root, formats, opts...)
+					},
+					NewValidatorForField: func(field string, schema *spec.Schema, rootSchema interface{}, root string, formats strfmt.Registry, opts ...Option) ValueValidator {
+						return NewSchemaValidator(schema, rootSchema, root, formats, opts...)
+					},
+				},
+			}
+
+			res := validator.Validate(c.data)
+			assert.ElementsMatch(t, c.expectedErr, res.Errors)
+		})
+	}
 }
 
 func ptr[T any](v T) *T {
