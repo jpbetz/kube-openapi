@@ -21,25 +21,6 @@ type Metadata struct {
 	Name string `json:"name"`
 }
 
-// APIVersion declares an external versioned API package, such as
-// staging/src/k8s.io/api/<group>/<version>/. Each entry corresponds to one
-// served GroupVersion.
-type APIVersion struct {
-	APIVersion string         `json:"apiVersion"`
-	Kind       string         `json:"kind"`
-	Metadata   Metadata       `json:"metadata"`
-	Spec       APIVersionSpec `json:"spec"`
-}
-
-// APIVersionSpec provides a specification for an APIVersion.
-type APIVersionSpec struct{}
-
-// VersionFromName returns the version part of the metadata.name.
-func (av *APIVersion) VersionFromName() string {
-	_, v, _ := splitGroupVersion(av.Metadata.Name)
-	return v
-}
-
 // APIGroup declares an external versioned API group.
 type APIGroup struct {
 	APIVersion string       `json:"apiVersion"`
@@ -55,6 +36,18 @@ type APIGroupSpec struct {
 	// "<ModelPackage>.<version>" (e.g. "io.k8s.api.apps" + "v1" yields
 	// "io.k8s.api.apps.v1").
 	ModelPackage string `json:"modelPackage,omitempty"`
+
+	// Versions enumerates the versions of the group that openapi-gen
+	// should activate for. A version under the group's directory that
+	// is not listed here (e.g. a deprecated version retained for
+	// conversions only) is left alone.
+	Versions []Version `json:"versions,omitempty"`
+}
+
+// Version describes a single version inside APIGroupSpec.Versions.
+type Version struct {
+	// Name is the version, e.g. "v1" or "v1beta2".
+	Name string `json:"name"`
 }
 
 // ModelPackageFor returns the OpenAPI model package for the given version.
@@ -63,4 +56,14 @@ func (g *APIGroup) ModelPackageFor(version string) string {
 		return ""
 	}
 	return g.Spec.ModelPackage + "." + version
+}
+
+// HasVersion reports whether version is listed in spec.versions.
+func (g *APIGroup) HasVersion(version string) bool {
+	for _, v := range g.Spec.Versions {
+		if v.Name == version {
+			return true
+		}
+	}
+	return false
 }

@@ -22,8 +22,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -31,34 +29,13 @@ import (
 const (
 	// We define an apiVersion and kinds for defining APIs
 	// in the source tree like we do for everything else.
-	schemeGroupVersion = "apidefinitions.k8s.io/v1alpha1"
-	kindAPIVersion     = "APIVersion"
+	schemeGroupVersion = "apidefinitions.config.k8s.io/v1alpha1"
 	kindAPIGroup       = "APIGroup"
 
 	// We have a naming convention for the files used to define
 	// APIs in the source tree.
-	apiVersionFile = "apiversion.yaml"
-	apiGroupFile   = "apigroup.yaml"
+	apiGroupFile = "apigroup.yaml"
 )
-
-// LoadAPIVersion reads an apiversion.yaml file, returning nil if absent.
-func LoadAPIVersion(dir string) (*APIVersion, error) {
-	data, err := readManifest(dir, apiVersionFile)
-	if err != nil || data == nil {
-		return nil, err
-	}
-	av := &APIVersion{}
-	if err := yaml.Unmarshal(data, av); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, apiVersionFile), err)
-	}
-	if err := validateTypeMeta(av.APIVersion, av.Kind, kindAPIVersion); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, apiVersionFile), err)
-	}
-	if err := validateName(av); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, apiVersionFile), err)
-	}
-	return av, nil
-}
 
 // LoadAPIGroup reads an apigroup.yaml file, returning nil if absent.
 func LoadAPIGroup(dir string) (*APIGroup, error) {
@@ -92,38 +69,4 @@ func validateTypeMeta(actualAPIVersion, actualKind, expectedKind string) error {
 		return fmt.Errorf("expected kind %s but got %s", expectedKind, actualKind)
 	}
 	return nil
-}
-
-var (
-	groupRegexp = regexp.MustCompile(`^[a-z0-9\-]+(\.[a-z0-9\-]+)*$`)
-)
-
-func validateName(av *APIVersion) error {
-	g, _, err := splitGroupVersion(av.Metadata.Name)
-	if err != nil {
-		return fmt.Errorf("metadata.name: %w", err)
-	}
-	if g != "" && !groupRegexp.MatchString(g) {
-		return fmt.Errorf("metadata.name: group %q must be lowercase letters, optionally dot-separated", g)
-	}
-	return nil
-}
-
-// splitGroupVersion parses "<group>/<version>" or "<version>" (core group).
-func splitGroupVersion(name string) (string, string, error) {
-	parts := strings.Split(name, "/")
-	switch len(parts) {
-	case 1:
-		if parts[0] == "" {
-			return "", "", fmt.Errorf("version is required")
-		}
-		return "", parts[0], nil
-	case 2:
-		if parts[0] == "" || parts[1] == "" {
-			return "", "", fmt.Errorf("group and version are both required when using <group>/<version>: %s", name)
-		}
-		return parts[0], parts[1], nil
-	default:
-		return "", "", fmt.Errorf("expected <group>/<version> or <version> but got: %s", name)
-	}
 }

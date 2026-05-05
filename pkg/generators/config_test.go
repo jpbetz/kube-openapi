@@ -17,6 +17,8 @@ limitations under the License.
 package generators
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"k8s.io/gengo/v2/generator"
@@ -79,22 +81,41 @@ func TestIsReadOnlyPkg(t *testing.T) {
 	}
 }
 
+// versionDirWithAPIGroup creates a temp dir <root>/<group>/<version> with
+// an apigroup.yaml at <root>/<group> declaring the given modelPackage.
+// Returns the version dir.
+func versionDirWithAPIGroup(t *testing.T, group, modelPkg, version string) string {
+	t.Helper()
+	groupDir := filepath.Join(t.TempDir(), group)
+	versionDir := filepath.Join(groupDir, version)
+	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	manifest := "apiVersion: apidefinitions.config.k8s.io/v1alpha1\n" +
+		"kind: APIGroup\n" +
+		"metadata: {name: " + group + "}\n" +
+		"spec:\n" +
+		"  modelPackage: " + modelPkg + "\n" +
+		"  versions: [{name: " + version + "}]\n"
+	if err := os.WriteFile(filepath.Join(groupDir, "apigroup.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	return versionDir
+}
+
 func TestGetModelNameTargets_ReadOnlyPkgs(t *testing.T) {
 	localPkg := "k8s.io/sample-apiserver/pkg/apis/wardle/v1beta1"
 	depPkg := "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	// Build a minimal generator.Context with two input packages:
-	// one "local" package and one "dependency" package. Both have
-	// the +k8s:openapi-model-package tag and a public struct type,
-	// so without readonly pkgs both would produce targets.
+	// Build a minimal generator.Context with two input packages —
+	// one "local", one "dependency" — each with a public struct.
+	// resolvePackageModelPackage walks pkg.Dir's parent for an
+	// apigroup.yaml, so we materialize one per package.
 	universe := types.Universe{
 		localPkg: {
 			Path: localPkg,
-			Dir:  "/fake/local/wardle/v1beta1",
+			Dir:  versionDirWithAPIGroup(t, "wardle", "io.k8s.sample-apiserver.pkg.apis.wardle", "v1beta1"),
 			Name: "v1beta1",
-			Comments: []string{
-				"+k8s:openapi-model-package=io.k8s.sample-apiserver.pkg.apis.wardle.v1beta1",
-			},
 			Types: map[string]*types.Type{
 				"Flunder": {
 					Name: types.Name{Package: localPkg, Name: "Flunder"},
@@ -104,11 +125,8 @@ func TestGetModelNameTargets_ReadOnlyPkgs(t *testing.T) {
 		},
 		depPkg: {
 			Path: depPkg,
-			Dir:  "/fake/gomodcache/k8s.io/apimachinery/pkg/apis/meta/v1",
+			Dir:  versionDirWithAPIGroup(t, "meta", "io.k8s.apimachinery.pkg.apis.meta", "v1"),
 			Name: "v1",
-			Comments: []string{
-				"+k8s:openapi-model-package=io.k8s.apimachinery.pkg.apis.meta.v1",
-			},
 			Types: map[string]*types.Type{
 				"ObjectMeta": {
 					Name: types.Name{Package: depPkg, Name: "ObjectMeta"},

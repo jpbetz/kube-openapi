@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -120,7 +121,7 @@ func apiTypeFilterFunc(c *generator.Context, t *types.Type) bool {
 }
 
 // isOpenAPIEnabledForPackage reports whether openapi generation is
-// requested for pkg. apigroup.yaml and apiversion.yaml are authoritative when present.
+// requested for pkg. apigroup.yaml are authoritative when present.
 // The +k8s:openapi-gen=true tag is checked only when the API definition files
 // are absent.
 func isOpenAPIEnabledForPackage(pkg *types.Package) bool {
@@ -132,11 +133,12 @@ func isOpenAPIEnabledForPackage(pkg *types.Package) bool {
 	if hasFalse && !hasTrue { // For backward compatability
 		return false
 	}
-	av, err := apidefinitions.LoadAPIVersion(pkg.Dir)
+	parentDir := filepath.Dir(pkg.Dir)
+	ag, err := apidefinitions.LoadAPIGroup(parentDir)
 	if err != nil {
 		klog.Fatalf("Package %v: %v", pkg.Path, err)
 	}
-	if av != nil {
+	if ag != nil && ag.HasVersion(path.Base(pkg.Path)) {
 		return true
 	}
 	return hasTrue
